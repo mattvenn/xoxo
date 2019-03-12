@@ -31,8 +31,8 @@ with open(test) as fh:
                 solver.add_assertion(Equals(board[row][col], Int(Cell.o.value)))
 
 def get_win_assertion(player):
-    # rows
     return Or(
+        # rows
         Equals(Plus(board[0]), Int(player * sq_size)), 
         Equals(Plus(board[1]), Int(player * sq_size)), 
         Equals(Plus(board[2]), Int(player * sq_size)),
@@ -97,10 +97,10 @@ while True:
         print("that cell is already taken")
 
     # can x win?
-    res = solver.solve([x_win_assertions])
+    res = solver.solve([o_win_assertions])
     if res:
         print_solver_board()
-        row, col = get_a_move(Cell.x)
+        row, col = get_a_move(Cell.o)
         print(row, col)
         play_move(Cell.o, row, col)
 
