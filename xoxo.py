@@ -1,4 +1,4 @@
-from pysmt.shortcuts import FreshSymbol, Symbol, String, LE, GE, Int, Or, And, Equals, Plus, Solver, StrContains
+from pysmt.shortcuts import FreshSymbol, Symbol, String, LE, GE, Int, Not, Or, And, Equals, Plus, Solver, StrContains
 from pysmt.typing import INT, STRING
 from enum import Enum
 class Cell(Enum):
@@ -31,7 +31,7 @@ with open(test) as fh:
                 solver.add_assertion(Equals(board[row][col], Int(Cell.o.value)))
 
 def get_win_assertion(player):
-    return Or(
+    return [
         # rows
         Equals(Plus(board[0]), Int(player * sq_size)), 
         Equals(Plus(board[1]), Int(player * sq_size)), 
@@ -42,7 +42,8 @@ def get_win_assertion(player):
         Equals(Plus([row[2] for row in board]), Int(player * sq_size)),
         # diags
         Equals(Plus([board[0][0], board[1][1], board[2][2]]), Int(player * sq_size)),
-        Equals(Plus([board[0][2], board[1][1], board[2][0]]), Int(player * sq_size)))
+        Equals(Plus([board[0][2], board[1][1], board[2][0]]), Int(player * sq_size))
+        ]
 
 # assertions for players to win
 o_win_assertions = get_win_assertion(Cell.o.value)
@@ -87,6 +88,7 @@ def play_move(player, row, col):
     display_board[row][col] = player
     solver.add_assertion(Equals(board[row][col], Int(player.value)))
 
+turns = 0
 while True:
     print_board()
     next_cell = int(raw_input("type a cell (1-9):")) - 1
@@ -96,11 +98,33 @@ while True:
     else:
         print("that cell is already taken")
 
-    # can x win?
-    res = solver.solve([o_win_assertions])
-    if res:
-        print_solver_board()
-        row, col = get_a_move(Cell.o)
-        print(row, col)
-        play_move(Cell.o, row, col)
+    turns += 1
 
+    # can o win and x not win?
+    move_assertion = GE(Int((turns+2)*(Cell.x.value + Cell.o.value)), Plus(Plus(board[0]), Plus(board[1]), Plus(board[2])))
+    print(move_assertion)
+    assertions = And(Not(Or(x_win_assertions)), Or(o_win_assertions)) #, move_assertion)
+    print(assertions)
+    res = solver.solve([assertions, move_assertion])
+    if res:
+        print("I can win like this")
+        print_solver_board()
+        result = get_a_move(Cell.o)
+        if result is not None:
+            print(result[0], result[1])
+            play_move(Cell.o, result[0], result[1])
+    else:
+        for assertion in o_win_assertions:
+            print("trying %s" % assertion)
+            res = solver.solve([assertion, move_assertion])
+            if res:
+                print_solver_board()
+                row, col = get_a_move(Cell.o)
+                print(row, col)
+                play_move(Cell.o, row, col)
+                break
+        else:
+            print("I can't win")
+            exit()
+
+    #print(solver.is_sat(Or(o_win_assertions)))
