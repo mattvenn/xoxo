@@ -48,13 +48,12 @@ solver.add_assertion(Or(
 
 
 print(solver.assertions)
-
 # solve
 res = solver.solve()
 if res:
     for row in board:
         for cell in row:
-            print solver.get_value(cell),
+            print Cell(int(solver.get_py_value(cell))).name,
         print ""
 else:
     print("no result found")
