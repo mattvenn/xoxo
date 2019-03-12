@@ -1,13 +1,22 @@
 from pysmt.shortcuts import FreshSymbol, Symbol, String, LE, GE, Int, Not, Or, And, Equals, Plus, Solver, StrContains
 from pysmt.typing import INT, STRING
 from enum import Enum
+import logging
+logger = logging.getLogger('xoxo')
+logger.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.INFO) # change to DEBUG for info on assertions
+logger.addHandler(ch)
+
 class Cell(Enum):
     x = 1
     o = 10
     s = 0
 
+DEBUG = False
 turns = 0
 sq_size = 3
+test = 'tests/test1.txt'
 test = 'tests/blank.txt'
 
 # create symbols for the board
@@ -55,25 +64,19 @@ def get_win_assertion(player):
 o_win_assertions = get_win_assertion(Cell.o.value)
 x_win_assertions = get_win_assertion(Cell.x.value)
 
-
-print(solver.assertions)
+logger.debug(solver.assertions)
 
 def print_board():
-    print("display board")
     for row in display_board:
-        for cell in row:
-            print cell.name,
-        print ""
+        logger.info(" ".join([cell.name.replace('s','.') for cell in row]))
 
 def print_solver_board():
-    print("solver board")
+    logger.debug("solver board")
     for row in board:
-        for cell in row:
-            print Cell(int(solver.get_py_value(cell))).name,
-        print ""
+        logger.debug(" ".join([Cell(int(solver.get_py_value(cell))).name.replace('s','.') for cell in row]))
 
 def get_a_move(player):
-    print("looking for a move for %s" % player)
+    logger.debug("looking for a move for %s" % player)
     # prioritise center position
     if display_board[1][1] == Cell.s and Cell(int(solver.get_py_value(board[1][1]))) == player:
         return(1,1)
@@ -97,65 +100,84 @@ def play_move(player, row, col):
     solver.add_assertion(Equals(board[row][col], Int(player.value)))
 
 while True:
+
+    # get user input and handle errors
+    logger.info("-" * 40)
+    logger.info("turn %d" % turns)
     print_board()
-    next_cell = int(raw_input("type a cell (1-9):")) - 1
+    try:
+        next_cell = int(raw_input("type a cell (1-9):")) - 1
+    except ValueError:
+        continue
     if next_cell < 0 or next_cell > 8:
         continue
 
+    # convert index to rows, cols, check if space is free
     row, col = convert_num_to_indices(next_cell)
     if(not already_played(row, col)):
         play_move(Cell.x, row, col)
     else:
-        print("that cell is already taken")
+        logger.info("that cell is already taken")
         continue
 
     turns += 1
-    print("turn %d" % turns)
 
-    next_move_assertion = Equals(Int((turns+1)*(Cell.x.value + Cell.o.value)), Plus(Plus(board[0]), Plus(board[1]), Plus(board[2])))
+    # assertions for next move
+    x_next_move_assertion = Equals(Int((turns+1)*Cell.x.value + (turns*Cell.o.value)), Plus(Plus(board[0]), Plus(board[1]), Plus(board[2])))
+    x_this_move_assertion = Equals(Int((turns-1)*(Cell.x.value + Cell.o.value)+Cell.x.value), Plus(Plus(board[0]), Plus(board[1]), Plus(board[2])))
     this_move_assertion = Equals(Int((turns)*(Cell.x.value + Cell.o.value)), Plus(Plus(board[0]), Plus(board[1]), Plus(board[2])))
     o_win_this_turn_assertions = And(Or(o_win_assertions), this_move_assertion)
-    x_win_next_turn_assertions = And(Or(x_win_assertions), next_move_assertion)
+    x_win_next_turn_assertions = And(Or(x_win_assertions), x_next_move_assertion)
+    x_win_this_turn_assertions = And(Or(x_win_assertions), x_this_move_assertion)
+
+    # detect x has won
+    logger.debug("checking if x has won")
+    logger.debug(x_win_this_turn_assertions)
+    if solver.solve([x_win_this_turn_assertions]):
+        print_solver_board()
+        exit("x wins")
 
     # can I win next turn?
+    logger.debug("look for o to win")
+    logger.debug(o_win_this_turn_assertions)
     if solver.solve([o_win_this_turn_assertions]):
-        print("o can win like this")
+        logger.debug("o can win like this")
         print_solver_board()
         result = get_a_move(Cell.o)
         if result is not None:
-            print(result[0], result[1])
             play_move(Cell.o, result[0], result[1])
+            print_board()
+            exit("o wins")
 
-    elif solver.solve([x_win_next_turn_assertions]):
+    logger.debug("look for x to win")
+    logger.debug(x_win_next_turn_assertions)
+    if solver.solve([x_win_next_turn_assertions]):
         # can x win next turn? if so stop
-        assertions = And(Or(x_win_assertions), move_assertion)
-        print(assertions)
-        res = solver.solve([assertions])
-        if res:
-            print("x can win like this")
-            print_solver_board()
-            result = get_a_move(Cell.x)
-            if result is not None:
-                print(result[0], result[1])
-                play_move(Cell.o, result[0], result[1])
-    # otherwise try and win
-    else:
-        print("looking for a win")
-        for future_turn in range(turns, 4):
-            move_assertion = Equals(Int((future_turn)*(Cell.x.value + Cell.o.value)), Plus(Plus(board[0]), Plus(board[1]), Plus(board[2])))
-            for assertion in o_win_assertions:
-                print("trying %s turn %d" % (assertion, future_turn))
-                res = solver.solve([assertion, move_assertion])
-                if res:
-                    print("found a win on turn %d" % future_turn)
-                    print_solver_board()
-                    row, col = get_a_move(Cell.o)
-                    print(row, col)
-                    play_move(Cell.o, row, col)
-                    break
-#        else:
-#            print("I can't win")
-#            exit()
+        logger.debug("x can win like this")
+        print_solver_board()
+        result = get_a_move(Cell.x)
+        if result is not None:
+            play_move(Cell.o, result[0], result[1])
+            continue
 
-    #print(solver.is_sat(Or(o_win_assertions)))
-    print("-" * 40)
+    # otherwise try and win
+    logger.debug("looking for a win")
+    played = False
+    for future_turn in range(turns, 5):
+        move_assertion = Equals(Int((future_turn)*(Cell.x.value + Cell.o.value)), Plus(Plus(board[0]), Plus(board[1]), Plus(board[2])))
+        for assertion in o_win_assertions:
+            logger.debug("trying %s turn %d" % (assertion, future_turn))
+            res = solver.solve([assertion, move_assertion])
+            if res:
+                logger.debug("found a win on turn %d" % future_turn)
+                print_solver_board()
+                row, col = get_a_move(Cell.o)
+                play_move(Cell.o, row, col)
+                played = True
+                break
+
+        if played:
+            break
+
+    if not played:
+        exit("I give up")
