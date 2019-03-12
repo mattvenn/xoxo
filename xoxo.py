@@ -149,7 +149,7 @@ while True:
             print_board()
             exit("o wins")
 
-    logger.debug("look for x to win")
+    logger.debug("look for x to win next turn")
     logger.debug(x_win_next_turn_assertions)
     if solver.solve([x_win_next_turn_assertions]):
         # can x win next turn? if so stop
